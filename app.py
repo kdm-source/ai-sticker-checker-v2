@@ -1,6 +1,5 @@
 import io, json, time, os, traceback
 from google import genai
-from google.genai import types  # 안전 설정을 위해 추가
 from flask import Flask, request, jsonify, render_template_string
 from PIL import Image
 
@@ -19,7 +18,7 @@ HTML_TEMPLATE = """
         body { font-family: 'Pretendard', sans-serif; text-align: center; background: #f8f9fa; padding: 20px; }
         .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); display: inline-block; width: 95%; max-width: 1000px; }
         #list { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: 30px; }
-        .box { border: 4px solid #e9ecef; border-radius: 15px; width: 140px; height: 140px; background: #fff; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; transition: transform 0.2s; }
+        .box { border: 4px solid #e9ecef; border-radius: 15px; width: 140px; height: 140px; background: #fff; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .box img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
         #msg { background: #fff; border: 2px solid #dee2e6; padding: 20px; border-radius: 12px; margin-bottom: 30px; font-weight: bold; }
         .pass { border-color: #28a745 !important; background-color: #f1fbf3; }
@@ -41,7 +40,6 @@ HTML_TEMPLATE = """
             const msg = document.getElementById('msg');
             list.innerHTML = "";
             msg.innerHTML = "🔍 심사 중...";
-
             const formData = new FormData();
             for (let f of files) {
                 formData.append('images', f);
@@ -54,7 +52,6 @@ HTML_TEMPLATE = """
                 div.appendChild(img);
                 list.appendChild(div);
             }
-
             try {
                 const res = await fetch('/analyze', { method: 'POST', body: formData });
                 const results = await res.json();
@@ -88,52 +85,28 @@ def analyze():
     try:
         files = request.files.getlist('images')
         res_list = []
-        
         for f in files:
             try:
                 img = Image.open(io.BytesIO(f.read()))
-                
-                # [강력 프롬프트] AI에게 가이드라인 주입
+                # [수정] 프롬프트에서 '검열하지 말라'고 강력하게 지시
                 prompt = """
-                당신은 스티커 가이드라인 심사관입니다. 다음 기준에 따라 JSON으로만 답하세요:
-                1. [반려] 노출(성기, 엉덩이, 가슴 등), 성적인 암시, 심한 욕설(시발, 미친 등) -> {"is_safe": false, "reason": "검토 필요"}
-                2. [합격] 귀여운 동물, 캐릭터, 일상 문구, 유머 -> {"is_safe": true}
-                답변은 마크다운 없이 순수 JSON만 출력하세요.
+                당신은 스티커 심사관입니다. '어쩌라고' 같은 일상 문구는 무조건 합격시키세요.
+                오직 명백한 성기 노출이나 심각한 패드립 욕설만 반려하세요.
+                결과는 반드시 JSON으로만 답하세요: {"is_safe": true} 또는 {"is_safe": false, "reason": "위반"}
                 """
-                
-                # [수정] 자체 검열 완화 설정 추가
+                # [수정] 에러를 유발하는 safety_settings를 제거하고 기본값으로 실행
                 response = client.models.generate_content(
                     model="gemini-2.0-flash",
-                    contents=[prompt, img],
-                    config=types.GenerateContentConfig(
-                        safety_settings=[
-                            types.SafetySetting(category="HATE_SPEECH", threshold="BLOCK_NONE"),
-                            types.SafetySetting(category="HARASSMENT", threshold="BLOCK_NONE"),
-                            types.SafetySetting(category="SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
-                            types.SafetySetting(category="DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-                        ]
-                    )
+                    contents=[prompt, img]
                 )
-                
-                # 텍스트 정제 (마크다운 제거)
                 clean_txt = response.text.strip().replace('```json', '').replace('```', '')
                 result = json.loads(clean_txt)
-                
-                res_list.append({
-                    "is_safe": result.get("is_safe", True),
-                    "reason": result.get("reason", "검토 필요")
-                })
-                
+                res_list.append({"is_safe": result.get("is_safe", True), "reason": result.get("reason", "검토 필요")})
             except Exception as inner_e:
-                print("--- 개별 이미지 분석 에러 ---")
                 print(traceback.format_exc())
-                # 에러 발생 시에도 '검토 필요'로 표시
                 res_list.append({"is_safe": False, "reason": "검토 필요"})
-                
         return jsonify(res_list)
-        
     except Exception as e:
-        print("--- 전체 프로세스 치명적 에러 ---")
         print(traceback.format_exc())
         return jsonify([{"is_safe": False, "reason": "서버 장애"}]), 500
 
