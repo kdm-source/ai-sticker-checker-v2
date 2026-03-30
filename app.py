@@ -1,14 +1,12 @@
-import io, json, time
-import google.generativeai as genai
+import io, json, time, os
+from google import genai
 from flask import Flask, request, jsonify, render_template_string
 from PIL import Image
 
 app = Flask(__name__)
 
-# 1. API 설정
-genai.configure(api_key="AIzaSyC15W7lzCBfHn7TV91Ls82aeLtishRD7n0")
-model = genai.GenerativeModel('gemini-flash-lite-latest')
-# 2. HTML 화면 (사유 표시 기능 추가!)
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -23,10 +21,7 @@ HTML_TEMPLATE = """
         #msg { background: #fff; border: 2px solid #dee2e6; padding: 20px; border-radius: 12px; margin-bottom: 30px; font-size: 1.1em; color: #495057; }
         .pass { border-color: #28a745 !important; background-color: #f1fbf3; }
         .fail { border-color: #dc3545 !important; background-color: #fdf3f4; }
-        
-        /* 반려 사유를 보여주는 빨간 딱지 디자인 */
         .reason-tag { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(220, 53, 69, 0.9); color: white; font-size: 11px; padding: 5px; font-weight: bold; line-height: 1.2; word-break: break-all; }
-        
         input[type="file"] { background: #fff; border: 2px dashed #adb5bd; padding: 20px; border-radius: 10px; width: 100%; cursor: pointer; }
     </style>
 </head>
@@ -72,7 +67,6 @@ HTML_TEMPLATE = """
                             boxes[i].classList.add('pass');
                         } else {
                             boxes[i].classList.add('fail');
-                            // 💡 빨간 테두리일 경우, 그 안에 반려 사유를 글자로 박아줍니다!
                             const reasonDiv = document.createElement('div');
                             reasonDiv.className = 'reason-tag';
                             reasonDiv.innerText = r.reason;
@@ -116,10 +110,9 @@ def analyze():
                 - 오리, 햄스터 등 캐릭터, 일상 밈(ㅋㅋ, 가즈아 등)
                 """
                 
-                response = model.generate_content(
-                    [prompt, img],
-                    generation_config={"response_mime_type": "application/json"}
-                    # 주의: 구글 자체 필터를 끄지 않고 기본값으로 둡니다. (누드 사진에서 확실하게 에러를 뱉도록 유도)
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[prompt, img]
                 )
                 
                 result = json.loads(response.text)
@@ -128,21 +121,14 @@ def analyze():
                 if is_safe:
                     res_list.append({"is_safe": True})
                 else:
-                    # AI가 얌전하게 "이거 가이드라인 위반이야"라고 false를 줬을 때
                     res_list.append({"is_safe": False, "reason": "가이드라인 위반"})
                 
             except Exception as e:
                 error_msg = str(e).lower()
-                
-                # 💡 핵심 1: 구글 안전 필터가 발동해서 에러를 뿜었을 때 (누드 사진 등)
-                if "blocked" in error_msg or "empty" in error_msg or "safety" in error_msg:
-                    print("🚨 [안전 필터 작동] 차단됨!")
+                if "blocked" in error_msg or "safety" in error_msg:
                     res_list.append({"is_safe": False, "reason": "콘텐츠를 확인해주세요 (검열)"})
-                    
-                # 💡 핵심 2: 그 외의 진짜 이상한 에러들 (할당량 초과, 파싱 에러 등)
                 else:
                     print(f"⚠️ [시스템 에러] {error_msg}")
-                    # 화면에 보여주기 위해 에러 메시지를 짧게 잘라서 보냄
                     short_error = str(e)[:25] + "..."
                     res_list.append({"is_safe": False, "reason": f"오류: {short_error}"})
                 
@@ -153,3 +139,4 @@ def analyze():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+```
