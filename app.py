@@ -5,7 +5,9 @@ from PIL import Image
 
 app = Flask(__name__)
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+# 환경변수에서 키 가져오기
+api_key = os.environ.get("GEMINI_API_KEY")
+client = genai.Client(api_key=api_key)
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -95,27 +97,20 @@ def analyze():
         res_list = []
         
         for f in files:
-            time.sleep(1.0)
+            time.sleep(0.5)
             try:
                 img = Image.open(io.BytesIO(f.read()))
                 
-                prompt = """
-                당신은 스티커 자동 심사 AI입니다. 결과는 반드시 JSON 형식으로만 답하세요.
-                
-                [반려 조건] - 아래 해당하면 {"is_safe": false}
-                1. 명백하게 야한 사진 (사람의 신체 노출 등)
-                2. 심한 욕설이 적힌 텍스트
-                
-                [합격 조건] - 위가 아니면 무조건 {"is_safe": true}
-                - 오리, 햄스터 등 캐릭터, 일상 밈(ㅋㅋ, 가즈아 등)
-                """
+                prompt = "당신은 스티커 심사 AI입니다. 결과는 반드시 JSON 형식으로만 답하세요. [조건] 1. 신체 노출/욕설 텍스트는 is_safe: false 2. 캐릭터/일상 밈은 is_safe: true. 예시: {'is_safe': true}"
                 
                 response = client.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=[prompt, img]
                 )
                 
-                result = json.loads(response.text)
+                # [수정] JSON 파싱 오류 방지를 위해 텍스트 정제
+                clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                result = json.loads(clean_text)
                 is_safe = result.get("is_safe", True)
                 
                 if is_safe:
@@ -124,19 +119,13 @@ def analyze():
                     res_list.append({"is_safe": False, "reason": "가이드라인 위반"})
                 
             except Exception as e:
-                error_msg = str(e).lower()
-                if "blocked" in error_msg or "safety" in error_msg:
-                    res_list.append({"is_safe": False, "reason": "콘텐츠를 확인해주세요 (검열)"})
-                else:
-                    print(f"⚠️ [시스템 에러] {error_msg}")
-                    short_error = str(e)[:25] + "..."
-                    res_list.append({"is_safe": False, "reason": f"오류: {short_error}"})
+                res_list.append({"is_safe": False, "reason": "검토 필요"})
                 
         return jsonify(res_list)
         
     except Exception as e:
-        return jsonify([{"is_safe": False, "reason": "서버 완전 뻗음"}] * len(request.files.getlist('images')))
+        return jsonify([{"is_safe": False, "reason": "에러"}]), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-```
+    # 렌더 서버 환경에 맞게 호스트 설정
+    app.run(host='0.0.0.0', port=5000)
