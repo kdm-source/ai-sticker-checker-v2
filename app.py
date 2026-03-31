@@ -100,7 +100,7 @@ def analyze():
                 """
                 # [수정] 에러를 유발하는 safety_settings를 제거하고 기본값으로 실행
                 response = client.models.generate_content(
-                    model="models/gemini-1.5-flash-8b",
+                    model="gemini-1.5-flash",
                     contents=[prompt, img]
                 )
                 clean_txt = response.text.strip().replace('```json', '').replace('```', '')
