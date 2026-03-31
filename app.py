@@ -86,35 +86,41 @@ def analyze():
         files = request.files.getlist('images')
         res_list = []
         for f in files:
-    try:
-        # 1. 이미지 열기 및 리사이징 (메모리 부족 방어)
-        img = Image.open(io.BytesIO(f.read()))
-        img.thumbnail((512, 512)) 
+            try:
+                # 1. 이미지 처리
+                img = Image.open(io.BytesIO(f.read()))
+                img.thumbnail((512, 512)) 
+
+                # 2. 프롬프트 세팅
+                prompt = """
+                당신은 스티커 심사관입니다. '어쩌라고' 같은 일상 문구는 무조건 합격시키세요.
+                오직 명백한 성기 노출이나 심각한 패드립 욕설만 반려하세요.
+                결과는 반드시 JSON으로만 답하세요: {"is_safe": true} 또는 {"is_safe": false, "reason": "위반"}
+                """
+
+                # 3. 모델 호출 (2.0으로 고정)
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash", 
+                    contents=[prompt, img]
+                )
+
+                # 4. JSON 파싱
+                clean_txt = response.text.strip().replace('```json', '').replace('```', '')
+                result = json.loads(clean_txt)
+                res_list.append({
+                    "is_safe": result.get("is_safe", True), 
+                    "reason": result.get("reason", "검토 필요")
+                })
+
+            except Exception as inner_e:
+                # 할당량 초과나 모델 에러 시 로그를 찍고 리스트에 추가
+                print(f"이미지 처리 중 개별 에러: {inner_e}")
+                res_list.append({"is_safe": False, "reason": "할당량 초과(대기 필요)"})
         
-        # 2. 어제 성공했던 프롬프트와 모델로 원복
-        prompt = """
-        당신은 스티커 심사관입니다. '어쩌라고' 같은 일상 문구는 무조건 합격시키세요.
-        오직 명백한 성기 노출이나 심각한 패드립 욕설만 반려하세요.
-        결과는 반드시 JSON으로만 답하세요: {"is_safe": true} 또는 {"is_safe": false, "reason": "위반"}
-        """
-        
-        # 3. 모델명을 원래대로 2.0으로 복구 (404 에러 방지)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash", 
-            contents=[prompt, img]
-        )
-        
-        # 4. 결과 처리 로직 (동일)
-        clean_txt = response.text.strip().replace('```json', '').replace('```', '')
-        result = json.loads(clean_txt)
-        res_list.append({"is_safe": result.get("is_safe", True), "reason": result.get("reason", "검토 필요")})
-        
-    except Exception as e:
-        # 할당량 초과(429) 시 사용자에게 보여줄 메시지
-        res_list.append({"is_safe": False, "reason": "할당량 초과(잠시 후 시도)"})
         return jsonify(res_list)
+
     except Exception as e:
-        print(traceback.format_exc())
+        print(f"전체 시스템 에러: {traceback.format_exc()}")
         return jsonify([{"is_safe": False, "reason": "서버 장애"}]), 500
 
 if __name__ == '__main__':
