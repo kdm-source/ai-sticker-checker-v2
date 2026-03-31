@@ -1,4 +1,4 @@
 flask
-google-genai
+google-genai>=0.3.0
 Pillow
 gunicorn
