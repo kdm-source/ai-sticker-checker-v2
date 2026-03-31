@@ -90,7 +90,6 @@ def analyze():
                 # 1. 이미지 열기
                 img = Image.open(io.BytesIO(f.read()))
                 
-                # [여기에 추가!] AI에게 보내기 전에 크기부터 줄입니다.
                 img.thumbnail((512, 512)) 
                 
                 # 2. 명령서(프롬프트)는 그대로 둡니다. (이게 있어야 심사를 하니까요!)
@@ -101,7 +100,7 @@ def analyze():
                 """
                 # [수정] 에러를 유발하는 safety_settings를 제거하고 기본값으로 실행
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",
+                    model="models/gemini-1.5-flash",
                     contents=[prompt, img]
                 )
                 clean_txt = response.text.strip().replace('```json', '').replace('```', '')
