@@ -100,7 +100,7 @@ def analyze():
 
                 # 3. 모델 호출 (2.0으로 고정)
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash", 
+                    model="gemini-2.5-flash", 
                     contents=[prompt, img]
                 )
 
