@@ -13,18 +13,29 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>AI 검수덕</title>
+    <title>AI OGQ</title>
     <style>
-        body { font-family: 'Pretendard', sans-serif; text-align: center; background: #f8f9fa; padding: 20px; }
-        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); display: inline-block; width: 95%; max-width: 1000px; }
-        #list { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: 30px; }
-        .box { border: 4px solid #e9ecef; border-radius: 15px; width: 140px; height: 140px; background: #fff; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .box img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
-        #msg { background: #fff; border: 2px solid #dee2e6; padding: 20px; border-radius: 12px; margin-bottom: 30px; font-weight: bold; }
-        .pass { border-color: #28a745 !important; background-color: #f1fbf3; }
-        .fail { border-color: #dc3545 !important; background-color: #fdf3f4; }
-        .reason-tag { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(220, 53, 69, 0.9); color: white; font-size: 11px; padding: 5px; font-weight: bold; }
-    </style>
+    body { font-family: 'Pretendard', sans-serif; text-align: center; background: #f8f9fa; padding: 20px; }
+    .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); display: inline-block; width: 95%; max-width: 1000px; }
+    #list { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: 30px; }
+    
+    /* 텍스트가 들어가야 하므로 박스 크기를 세로로 키웠습니다 */
+    .box { border: 4px solid #e9ecef; border-radius: 15px; width: 200px; min-height: 280px; background: #fff; position: relative; display: flex; flex-direction: column; align-items: center; overflow: hidden; transition: 0.3s; }
+    .box img { width: 100%; height: 150px; object-fit: contain; padding: 10px; background: #fafafa; }
+    
+    #msg { background: #fff; border: 2px solid #dee2e6; padding: 20px; border-radius: 12px; margin-bottom: 30px; font-weight: bold; }
+    
+    /* 상태별 테두리 색상 */
+    .pass { border-color: #28a745 !important; }
+    .fail { border-color: #dc3545 !important; }
+    
+    /* 상세 사유가 들어갈 하단 영역 */
+    .info-area { padding: 12px; font-size: 12px; text-align: left; line-height: 1.4; flex-grow: 1; width: 100%; border-top: 1px solid #eee; background: #fff; }
+    .pass .info-area { background-color: #f1fbf3; color: #155724; }
+    .fail .info-area { background-color: #fdf3f4; color: #721c24; }
+    
+    .tip-text { display: block; margin-top: 8px; font-size: 11px; color: #666; border-top: 1px dashed #ccc; padding-top: 5px; }
+</style>
 </head>
 <body>
     <div class="card">
@@ -58,14 +69,17 @@ HTML_TEMPLATE = """
                 const boxes = document.querySelectorAll('.box');
                 results.forEach((r, i) => {
                     if(boxes[i]) {
-                        if (r.is_safe) boxes[i].classList.add('pass');
-                        else {
+                        const info = document.createElement('div');
+                        info.className = 'info-area';
+                        
+                        if (r.is_safe) {
+                            boxes[i].classList.add('pass');
+                            info.innerHTML = `<b>✅ 승인 사유</b><br>${r.reason}<br><span class="tip-text">💡 팁: ${r.tip}</span>`;
+                        } else {
                             boxes[i].classList.add('fail');
-                            const tag = document.createElement('div');
-                            tag.className = 'reason-tag';
-                            tag.innerText = r.reason;
-                            boxes[i].appendChild(tag);
+                            info.innerHTML = `<b>❌ 반려 사유</b><br>${r.reason}<br><span class="tip-text">💡 수정 제안: ${r.tip}</span>`;
                         }
+                        boxes[i].appendChild(info);
                     }
                 });
                 msg.innerHTML = "✅ 심사 완료";
@@ -93,12 +107,27 @@ def analyze():
 
                 # 2. 프롬프트 세팅
                 prompt = """
-                당신은 스티커 심사관입니다. '어쩌라고' 같은 일상 문구는 무조건 합격시키세요.
-                오직 명백한 성기 노출이나 심각한 패드립 욕설만 반려하세요.
-                결과는 반드시 JSON으로만 답하세요: {"is_safe": true} 또는 {"is_safe": false, "reason": "위반"}
+                당신은 글로벌 메신저의 '스티커 콘텐츠 전문 심사관'입니다. 
+                제공된 이미지를 분석하여 다음 가이드라인에 따라 심사평을 작성하세요.
+
+                [심사 원칙]
+                - 긍정적 검토: 창작의 자유를 존중하며, 일상적인 유머나 문구(예: 어쩌라고)는 적극 수용합니다.
+                - 엄격한 금기: 과도한 신체 노출, 성적인 암시, 특정 계층 비하, 폭력적인 묘사만 제한합니다.
+
+                [응답 항목]
+                1. is_safe: 승인 여부 (true/false)
+                2. reason: [승인 시] 이미지의 긍정적인 요소 설명 / [반려 시] 구체적인 규정 위반 사유 설명
+                3. tip: [공통] 향후 창작 시 참고할 만한 구체적인 개선 아이디어나 제안
+
+                [출력 형식 - JSON]
+                {
+                  "is_safe": true/false,
+                  "reason": "이미지의 구도와 문구가 조화로우며 사용자들에게 즐거움을 줄 수 있는 일상적 표현입니다.",
+                  "tip": "캐릭터의 표정을 조금 더 다양하게 구성하면 시리즈물로서의 매력이 더 높아질 것 같습니다."
+                }
                 """
 
-                # 3. 모델 호출 (2.0으로 고정)
+                # 3. 모델 호출 (2.5으로 고정)
                 response = client.models.generate_content(
                     model="gemini-2.5-flash", 
                     contents=[prompt, img]
